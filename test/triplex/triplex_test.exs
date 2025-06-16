@@ -112,6 +112,36 @@ defmodule TriplexTest do
     end
   end
 
+  test "all/1 must return all tenants, but only those with the tennant prefix" do
+    for repo <- repos() do
+      sql =
+        case repo.__adapter__() do
+          Ecto.Adapters.MyXQL -> ~s|CREATE DATABASE `should_not_appear_in_all`|
+          Ecto.Adapters.Postgres -> ~s|CREATE SCHEMA "should_not_appear_in_all"|
+        end
+
+      prefix = Triplex.config().tenant_prefix
+      Application.put_env(:triplex, :tenant_prefix, "test_tennant_prefix")
+      assert {:ok, _} = Ecto.Adapters.SQL.query(repo, sql, [])
+      tenants = ["lala", "lili", "lolo"]
+
+      Enum.each(tenants, fn tenant -> Triplex.create(tenant, repo) end)
+      assert MapSet.new(Triplex.all(repo)) == MapSet.new(["lala", "lili", "lolo"])
+
+      # restor the prefix to what it was
+      Enum.each(tenants, fn tenant -> Triplex.drop(tenant, repo) end)
+      Application.put_env(:triplex, :tenant_prefix, prefix)
+
+      sql =
+        case repo.__adapter__() do
+          Ecto.Adapters.MyXQL -> ~s|DROP DATABASE `should_not_appear_in_all`|
+          Ecto.Adapters.Postgres -> ~s|DROP SCHEMA "should_not_appear_in_all"|
+        end
+
+      assert {:ok, _} = Ecto.Adapters.SQL.query(repo, sql, [])
+    end
+  end
+
   test "exists?/2 for a not created tenant returns false" do
     for repo <- repos() do
       refute Triplex.exists?("lala", repo)
